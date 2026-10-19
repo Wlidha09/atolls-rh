@@ -65,16 +65,6 @@ In Google Cloud Console → Google Auth Platform:
 2. Open Clients → Create client → Web application.
 3. Add the production authorized JavaScript origin:
 
-```text
-https://atolls-rh.netlify.app
-```
-
-4. Add this exact authorized redirect URI:
-
-```text
-https://atolls-rh.netlify.app/api/auth/callback
-```
-
 For local testing, also add origin `http://localhost:3000` and redirect URI `http://localhost:3000/api/auth/callback`.
 
 Copy the OAuth client ID and current client secret into the server environment. Database tokens and Google OAuth credentials are separate. This project intentionally checks Google's verified email and Workspace `hd` claim against `COMPANY_DOMAIN`; it will not accept personal Gmail accounts.
@@ -114,7 +104,6 @@ Remove the old `DB_PATH` variable. Push your source changes and redeploy; clear 
 
 ## 8. Verify the deployed app
 
-Open https://atolls-rh.netlify.app/api/health. It should return `{"ok":true,"database":"ready"}`.
 
 - **503:** check the Turso URL/token in Netlify's Functions environment and confirm setup/seed used the same database. Check token validity and function logs.
 - **404 or HTML:** check the repository base directory, Next.js framework integration and redirects.
