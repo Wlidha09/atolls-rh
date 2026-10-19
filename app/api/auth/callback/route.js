@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { createSession } from '../../../../lib/session.js';
 import { acceptGoogleIdentity } from '../../../../lib/identity.js';
+import { describeError } from '../../../../lib/diagnostics.js';
 const jwks = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 export const runtime = 'nodejs';
 export async function GET(request) {
@@ -46,7 +47,7 @@ export async function GET(request) {
     await createSession(employee);
     return redirect();
   } catch (error) {
-    console.error('Google sign-in failed:', error.code || error.status || error.name);
+    console.error('Google sign-in failed:', describeError(error));
     return redirect(['Inactive', 'Domain', 'Configuration'].includes(error.message) ? error.message : identityVerified ? 'Database' : 'OAuth');
   }
 }

@@ -2,6 +2,22 @@
 
 Full-stack JavaScript with Next.js App Router, Google Workspace OAuth and a remote **Turso libSQL** database. The server uses the HTTP client: no local SQLite file, writable disk or `node:sqlite` dependency is used in production. Database access, business operations, sessions, audits and notification outbox operations are asynchronous.
 
+## Netlify setup without a terminal
+
+If you have already created a Turso libSQL database, you can initialize the application during one production Netlify deployment:
+
+1. Update the source in the repository connected to Netlify with this project. Keep the build command `npm run build`; it now includes an optional setup step.
+2. In Netlify environment variables, verify `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are available to both Builds and Functions in the Production context.
+3. Set `ADMIN_EMAIL` to the exact Google account that should be the initial administrator. Its domain may differ from `COMPANY_DOMAIN`, including a personal Gmail address.
+4. Add `INITIALIZE_DATABASE=true`, with Builds scope and Production context only.
+5. Trigger a production deployment. Its build log should say `Database setup complete.` before the Next.js build begins.
+6. Remove `INITIALIZE_DATABASE` after this deployment succeeds. Future builds then do not touch the database.
+7. Open your site's `/api/health`. It should return `{"ok":true,"database":"ready"}`. Then sign in with the seeded administrator and complete onboarding.
+
+Setup creates missing tables, departments, rooms and the configured initial administrator. It does not delete records, reset accounts, change existing roles, or reactivate employees. Preview/branch builds and local builds cannot use this automatic setup option. If setup fails, deployment stops and the existing deployed site is left in place. The schema initializer is idempotent; it is not a schema-upgrade migration engine.
+
+The documentation uses generic example domains so the application's public site URL and company domain are not repeated in these files. Keep secret scanning enabled. Only actual credentials need to be marked as secrets.
+
 ## 1. Create a Turso account and libSQL database
 
 Visit https://turso.tech/ and create an account. Install the Turso CLI using the instructions at https://docs.turso.tech/cli/installation (macOS, Linux, or WSL on Windows). Then open a terminal:
@@ -39,7 +55,19 @@ On Windows PowerShell:
 Copy-Item .env.example .env.local
 ```
 
-Use an actual Google Workspace account on the configured domain for `ADMIN_EMAIL`. A personal Gmail address will fail the domain check and seed validation. No variables in this list need `NEXT_PUBLIC_`. Do not commit `.env.local` or share its contents. If a credential has previously been shared, replace it before use.
+Edit `.env.local`:
+
+```env
+APP_URL=http://localhost:3000
+TURSO_DATABASE_URL=libsql://COPY-THE-EXACT-URL-FROM-TURSO
+TURSO_AUTH_TOKEN=YOUR-DATABASE-TOKEN
+GOOGLE_CLIENT_ID=YOUR-GOOGLE-OAUTH-CLIENT-ID
+GOOGLE_CLIENT_SECRET=YOUR-NEW-GOOGLE-OAUTH-CLIENT-SECRET
+COMPANY_DOMAIN=example.com
+ADMIN_EMAIL=YOUR-ADMIN@example.net
+```
+
+`ADMIN_EMAIL` may be a Google account on a different domain, including Gmail. Only this exact verified address is exempt from the employee domain restriction. No variables in this list need `NEXT_PUBLIC_`. Do not commit `.env.local` or share its contents. If a credential has previously been shared, replace it before use.
 
 ## 4. Initialize the remote database once
 
@@ -53,7 +81,7 @@ npm run db:check
 
 Expected final output: `Database connection, tables and administrator: OK.`
 
-`db:setup` creates missing tables; `seed` creates the initial RH administrator, five departments and three rooms. These commands are repeatable: they do not clear tables, overwrite employee profiles or reactivate inactive accounts. Do not run them as part of every Netlify build or expose them as a public web endpoint. `ADMIN_EMAIL` alone does not create an account; the seed command must run.
+`db:setup` creates missing tables; `seed` creates the initial RH administrator, five departments and three rooms. These commands are repeatable: they do not clear tables, overwrite employee profiles or reactivate inactive accounts. For Netlify, use the one-time setup flag above and remove it afterward. Do not expose setup as a public web endpoint. `ADMIN_EMAIL` alone does not create an account; the seed command must run.
 
 This starts a fresh remote database. Existing SQLite data is not imported automatically. If you have records to retain, back up the original database and plan a separate data import before switching production.
 
@@ -61,13 +89,23 @@ This starts a fresh remote database. Existing SQLite data is not imported automa
 
 In Google Cloud Console → Google Auth Platform:
 
-1. Configure Branding and Audience. Use Internal for a company Workspace organization where available. For an External app in Testing, add the company accounts as test users.
+1. Configure Branding and Audience. If ADMIN_EMAIL is outside your Workspace organization, select External. While the app is in Testing, add the administrator and any required employee test accounts under Test users. Use Internal only when every allowed account belongs to that organization.
 2. Open Clients → Create client → Web application.
 3. Add the production authorized JavaScript origin:
 
+```text
+https://your-site.netlify.app
+```
+
+4. Add this exact authorized redirect URI:
+
+```text
+https://your-site.netlify.app/api/auth/callback
+```
+
 For local testing, also add origin `http://localhost:3000` and redirect URI `http://localhost:3000/api/auth/callback`.
 
-Copy the OAuth client ID and current client secret into the server environment. Database tokens and Google OAuth credentials are separate. This project intentionally checks Google's verified email and Workspace `hd` claim against `COMPANY_DOMAIN`; it will not accept personal Gmail accounts.
+Copy the OAuth client ID and current client secret into the server environment. Database tokens and Google OAuth credentials are separate. Ordinary employees must have a verified Workspace identity with `hd` matching `COMPANY_DOMAIN`. The exact verified `ADMIN_EMAIL` address is an exception and may be outside that domain; it must be explicitly seeded as RH before signing in. Other personal accounts remain blocked. For an external administrator, set Google Auth Platform Audience to External and, while Testing, add that administrator under Test users. An Internal Google audience will block accounts outside the organization before the app can authenticate them.
 
 ## 6. Test locally
 
@@ -81,7 +119,7 @@ Open http://localhost:3000/api/health. Expected response:
 {"ok":true,"database":"ready"}
 ```
 
-Then open http://localhost:3000 and sign in with the seeded company administrator. Complete the onboarding profile. Newly seen company accounts receive Dev access and must complete onboarding; HR can pre-create accounts and assign access.
+Then open http://localhost:3000 and sign in with the seeded administrator. Complete the onboarding profile. Newly seen company accounts receive Dev access and must complete onboarding; HR can pre-create accounts and assign access.
 
 ## 7. Update Netlify
 
@@ -100,15 +138,26 @@ Use Netlify's Next.js framework integration. Do not publish a static export or d
 
 In Netlify → Project configuration → Environment variables, add the following for the Production deployment context, with **Builds and Functions** scope (or all scopes):
 
+```env
+APP_URL=https://your-site.netlify.app
+TURSO_DATABASE_URL=THE-SAME-URL-USED-LOCALLY
+TURSO_AUTH_TOKEN=THE-SAME-TOKEN-USED-LOCALLY
+GOOGLE_CLIENT_ID=YOUR-GOOGLE-CLIENT-ID
+GOOGLE_CLIENT_SECRET=YOUR-CURRENT-GOOGLE-CLIENT-SECRET
+COMPANY_DOMAIN=example.com
+ADMIN_EMAIL=YOUR-ADMIN@example.net
+```
+
 Remove the old `DB_PATH` variable. Push your source changes and redeploy; clear the build cache if Netlify still uses the old dependencies. Keep preview deployments on a separate database if you enable them: do not seed or test changes against production accidentally.
 
 ## 8. Verify the deployed app
 
+Open https://your-site.netlify.app/api/health. It should return `{"ok":true,"database":"ready"}`.
 
 - **503:** check the Turso URL/token in Netlify's Functions environment and confirm setup/seed used the same database. Check token validity and function logs.
 - **404 or HTML:** check the repository base directory, Next.js framework integration and redirects.
 - **`redirect_uri_mismatch`:** the URI registered in Google must equal the production callback URL above, and `APP_URL` must match the hostname you are using.
-- **`/?error=Domain`:** use a verified Workspace account from the configured domain. Do not change the allowed domain to `gmail.com`; the current policy also requires a Workspace `hd` claim.
+- **`/?error=Domain`:** use a verified Workspace account from the configured domain or the exact seeded `ADMIN_EMAIL`. Other external accounts are blocked. Keep `COMPANY_DOMAIN` set to the employee domain, not `gmail.com`.
 - **`/?error=Configuration`:** verify Google credentials and the initial RH account.
 - **`/?error=Database`:** Google verified the identity, but database access failed. Verify the database connection and schema.
 - **`/api/portal` returns 401 before sign-in:** expected; this endpoint requires an active session.
@@ -140,7 +189,7 @@ npm run build
 npm start
 ```
 
-Tests use temporary local libSQL databases with the same async client API; no Turso credentials are needed. Production imports only the HTTP transport. `npm run build` does not connect to or modify a database.
+Tests use temporary local libSQL databases with the same async client API; no Turso credentials are needed. Production imports only the HTTP transport. `npm run build` does not connect to a database unless the one-time production Netlify setup flag is enabled.
 
 See `VALIDATION.md` for checks performed and remaining integration limitations. The interface remains English; language preferences are stored but translations are not implemented. Leave day totals count Monday–Friday without automatic holiday/entitlement calculations. Future schema changes require explicit migrations. The current setup command is an idempotent initial schema initializer, not a migration engine.
 
