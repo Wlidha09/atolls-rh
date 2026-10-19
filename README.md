@@ -39,18 +39,6 @@ On Windows PowerShell:
 Copy-Item .env.example .env.local
 ```
 
-Edit `.env.local`:
-
-```env
-APP_URL=http://localhost:3000
-TURSO_DATABASE_URL=libsql://COPY-THE-EXACT-URL-FROM-TURSO
-TURSO_AUTH_TOKEN=YOUR-DATABASE-TOKEN
-GOOGLE_CLIENT_ID=YOUR-GOOGLE-OAUTH-CLIENT-ID
-GOOGLE_CLIENT_SECRET=YOUR-NEW-GOOGLE-OAUTH-CLIENT-SECRET
-COMPANY_DOMAIN=contractor.atolls.com
-ADMIN_EMAIL=YOUR-REAL-ADMIN@contractor.atolls.com
-```
-
 Use an actual Google Workspace account on the configured domain for `ADMIN_EMAIL`. A personal Gmail address will fail the domain check and seed validation. No variables in this list need `NEXT_PUBLIC_`. Do not commit `.env.local` or share its contents. If a credential has previously been shared, replace it before use.
 
 ## 4. Initialize the remote database once
@@ -121,16 +109,6 @@ Build settings:
 Use Netlify's Next.js framework integration. Do not publish a static export or drag only an `out`/`.next` folder into manual static hosting: API routes require the server-side framework deployment. Remove any old `/* /index.html 200` SPA catch-all redirect.
 
 In Netlify → Project configuration → Environment variables, add the following for the Production deployment context, with **Builds and Functions** scope (or all scopes):
-
-```env
-APP_URL=https://atolls-rh.netlify.app
-TURSO_DATABASE_URL=THE-SAME-URL-USED-LOCALLY
-TURSO_AUTH_TOKEN=THE-SAME-TOKEN-USED-LOCALLY
-GOOGLE_CLIENT_ID=YOUR-GOOGLE-CLIENT-ID
-GOOGLE_CLIENT_SECRET=YOUR-CURRENT-GOOGLE-CLIENT-SECRET
-COMPANY_DOMAIN=contractor.atolls.com
-ADMIN_EMAIL=YOUR-REAL-ADMIN@contractor.atolls.com
-```
 
 Remove the old `DB_PATH` variable. Push your source changes and redeploy; clear the build cache if Netlify still uses the old dependencies. Keep preview deployments on a separate database if you enable them: do not seed or test changes against production accidentally.
 
