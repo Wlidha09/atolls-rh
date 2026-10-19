@@ -1,76 +1,171 @@
-# Atolls HR Portal
+# Atolls HR Portal — Turso + Netlify
 
-Full-stack JavaScript application for the Atolls contractor division. Next.js App Router and React provide the UI and HTTP routes; Node's SQLite driver stores employee records, opaque sessions, leaves, meetings, work tickets, audit events and notifications. No TypeScript or external database service is required.
+Full-stack JavaScript with Next.js App Router, Google Workspace OAuth and a remote **Turso libSQL** database. The server uses the HTTP client: no local SQLite file, writable disk or `node:sqlite` dependency is used in production. Database access, business operations, sessions, audits and notification outbox operations are asynchronous.
 
-## Run locally
+## 1. Create a Turso account and libSQL database
 
-Install **Node.js 24 or newer**. From this project directory:
+Visit https://turso.tech/ and create an account. Install the Turso CLI using the instructions at https://docs.turso.tech/cli/installation (macOS, Linux, or WSL on Windows). Then open a terminal:
+
+```bash
+turso auth login
+turso db create atolls-hr
+turso db show atolls-hr --url
+turso db tokens create atolls-hr
+```
+
+Use `turso auth signup` instead of `login` if you still need to register. This project uses **libSQL**. Omit the `--tursodb` flag: that flag selects Turso's other engine and SDK. Copy the exact URL returned by the CLI and the database access token. Keep the token private.
+
+## 2. Install this updated project
+
+Install Node.js **24**, extract the archive, and open a terminal inside `atolls-hr`, where `package.json` lives:
 
 ```bash
 npm ci
+```
+
+Use this entire updated project, not only `lib/db.js`: the service, OAuth callback, sessions, tests and scripts also changed to use async database calls. Preserve your own uncommitted customizations when replacing an existing checkout. This archive contains no real credentials.
+
+## 3. Create `.env.local`
+
+Copy `.env.example` to `.env.local` in the project root. On macOS/Linux/WSL:
+
+```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local`. Set `COMPANY_DOMAIN` to your actual Google Workspace domain and `ADMIN_EMAIL` to a Google account on that domain. This account becomes the initial RH administrator. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as explained below. Then:
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+Edit `.env.local`:
+
+```env
+APP_URL=http://localhost:3000
+TURSO_DATABASE_URL=libsql://COPY-THE-EXACT-URL-FROM-TURSO
+TURSO_AUTH_TOKEN=YOUR-DATABASE-TOKEN
+GOOGLE_CLIENT_ID=YOUR-GOOGLE-OAUTH-CLIENT-ID
+GOOGLE_CLIENT_SECRET=YOUR-NEW-GOOGLE-OAUTH-CLIENT-SECRET
+COMPANY_DOMAIN=contractor.atolls.com
+ADMIN_EMAIL=YOUR-REAL-ADMIN@contractor.atolls.com
+```
+
+Use an actual Google Workspace account on the configured domain for `ADMIN_EMAIL`. A personal Gmail address will fail the domain check and seed validation. No variables in this list need `NEXT_PUBLIC_`. Do not commit `.env.local` or share its contents. If a credential has previously been shared, replace it before use.
+
+## 4. Initialize the remote database once
+
+These commands operate on the **remote Turso database configured in `.env.local`**:
 
 ```bash
+npm run db:setup
 npm run seed
+npm run db:check
+```
+
+Expected final output: `Database connection, tables and administrator: OK.`
+
+`db:setup` creates missing tables; `seed` creates the initial RH administrator, five departments and three rooms. These commands are repeatable: they do not clear tables, overwrite employee profiles or reactivate inactive accounts. Do not run them as part of every Netlify build or expose them as a public web endpoint. `ADMIN_EMAIL` alone does not create an account; the seed command must run.
+
+This starts a fresh remote database. Existing SQLite data is not imported automatically. If you have records to retain, back up the original database and plan a separate data import before switching production.
+
+## 5. Configure Google OAuth
+
+In Google Cloud Console → Google Auth Platform:
+
+1. Configure Branding and Audience. Use Internal for a company Workspace organization where available. For an External app in Testing, add the company accounts as test users.
+2. Open Clients → Create client → Web application.
+3. Add the production authorized JavaScript origin:
+
+```text
+https://atolls-rh.netlify.app
+```
+
+4. Add this exact authorized redirect URI:
+
+```text
+https://atolls-rh.netlify.app/api/auth/callback
+```
+
+For local testing, also add origin `http://localhost:3000` and redirect URI `http://localhost:3000/api/auth/callback`.
+
+Copy the OAuth client ID and current client secret into the server environment. Database tokens and Google OAuth credentials are separate. This project intentionally checks Google's verified email and Workspace `hd` claim against `COMPANY_DOMAIN`; it will not accept personal Gmail accounts.
+
+## 6. Test locally
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:3000. Sign in as the seeded administrator and complete the onboarding profile. The seed command creates five departments, three rooms, and the administrator; it does not create fake employees or sample activity. Re-running the seed does not overwrite existing accounts or reactivate inactive employees.
+Open http://localhost:3000/api/health. Expected response:
 
-## Google OAuth configuration
-
-1. Create a Google Cloud OAuth application for your organization and configure its consent screen. Use the Internal audience where your Workspace organization supports it.
-2. Create an OAuth client of type **Web application**.
-3. Add `http://localhost:3000` as an authorized JavaScript origin and `http://localhost:3000/api/auth/callback` as an authorized redirect URI.
-4. Copy the client ID and client secret into `.env.local`.
-5. Set `APP_URL` to the exact origin, including the port locally. For production use your HTTPS origin and register the corresponding `/api/auth/callback` URL in Google.
-
-The app implements authorization code flow with PKCE, state, nonce, and signature verification through Google's public keys. It checks issuer, audience, expiration, verified email, exact email domain and the Google Workspace `hd` claim. The authorization `hd` hint alone does not grant access.
-
-First-time verified company users automatically receive **Dev** access and must complete onboarding. HR can pre-create employees and assign their department, role and supervisor. An email already bound to a different Google subject cannot be reused silently. No developer login bypass is included.
-
-## Workflows
-
-- **Dashboard:** live counts, visible leave requests, office calendar, recent activity and today's meetings.
-- **Employees:** active employee directory for everyone; full records, profile edits, departments, access roles, supervisor assignment and deactivation for RH.
-- **Departments & Roles:** organization directory, department creation and documented role scopes.
-- **Leave:** requests, duplicate-date detection, scoped approvals, status tracking and supervisor/employee notifications. Self-approval is blocked, including for RH; another authorized reviewer must approve.
-- **Availability & Holidays:** employees update their daily status; RH maintains office holiday dates. Usual office days and hours are stored in profile preferences.
-- **Meetings & Rooms:** room creation, bookings, capacity checks, attendee invitations and cancellation notifications. Times are entered in the user's local timezone, stored as UTC and displayed in local time. Booking conflict checks and inserts run together inside a SQLite write transaction.
-- **Work Tickets:** assignment, priority, descriptions and status changes, restricted by access scope.
-- **Activity Logs:** persistent audit trail; RH sees the latest 200 workspace events, other users see their own latest 100 events. Older events remain in the database.
-- **Profile & Settings:** onboarding, profile editing, office days/hours, light/dark themes, language preference, notifications and sign-out.
-
-## Permissions and account security
-
-| Role | Access |
-| --- | --- |
-| Dev | Own profile, own leave, own/created tickets, shared active directory and room bookings |
-| Owner | Dev access plus leave review and ticket assignment for direct reports |
-| RH | Employee/department/room/holiday management, all leave review, all tickets and workspace audit log |
-
-Permissions are enforced in the service layer; hiding a UI button is not the access control. Each request reads the current employee record from the database. Sessions are random opaque tokens, stored as SHA-256 hashes with expiration. Cookies are HttpOnly and SameSite=Lax; production cookies are Secure. Mutating requests require the configured origin. Deactivation removes sessions, and inactive records cannot authenticate even with valid Google credentials. An inactive Google login persists a security event and notifies the supervisor, falling back to active RH administrators when no active supervisor exists.
-
-Self-deactivation and self-demotion of RH users are blocked. Supervisors cannot be deactivated or demoted to Dev until their active reports are reassigned. Supervisor cycles are rejected.
-
-## Notifications and email
-
-In-app notifications are saved transactionally with requests and security events. Email uses an outbox in the same database; notifications are queued even when SMTP is unavailable.
-
-For delivery, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM`, and optionally `SMTP_USER` / `SMTP_PASS`. Run a separate worker alongside the Next.js server:
-
-```bash
-npm run worker
+```json
+{"ok":true,"database":"ready"}
 ```
 
-Alternatively, `npm run notify` makes one delivery pass. Without SMTP, emails remain queued; in-app notifications are still available. The worker retries failed emails, uses atomic claims, and recovers abandoned claims. Delivery is at least once: a crash after SMTP accepts an email but before its status is saved can result in a duplicate. Inactive recipients do not receive email.
+Then open http://localhost:3000 and sign in with the seeded company administrator. Complete the onboarding profile. Newly seen company accounts receive Dev access and must complete onboarding; HR can pre-create accounts and assign access.
 
-Production processes can use `node scripts/worker.js` and `node scripts/seed.js` with environment variables provided by the host instead of `.env.local`.
+## 7. Update Netlify
 
-## Build and test
+Replace the old source in the Git repository connected to the existing Netlify site, including `package.json`, `package-lock.json`, `netlify.toml`, `lib/`, `app/`, `scripts/` and `netlify/functions/`. Keep `.env.local` out of Git. The tracked `.env.example` contains only placeholders.
+
+Build settings:
+
+| Setting | Value |
+| --- | --- |
+| Base directory | Folder containing `package.json`; `atolls-hr` if your repository contains that folder, otherwise leave blank |
+| Build command | `npm run build` |
+| Publish directory | `.next`, relative to the base directory |
+| Node version | `24` |
+
+Use Netlify's Next.js framework integration. Do not publish a static export or drag only an `out`/`.next` folder into manual static hosting: API routes require the server-side framework deployment. Remove any old `/* /index.html 200` SPA catch-all redirect.
+
+In Netlify → Project configuration → Environment variables, add the following for the Production deployment context, with **Builds and Functions** scope (or all scopes):
+
+```env
+APP_URL=https://atolls-rh.netlify.app
+TURSO_DATABASE_URL=THE-SAME-URL-USED-LOCALLY
+TURSO_AUTH_TOKEN=THE-SAME-TOKEN-USED-LOCALLY
+GOOGLE_CLIENT_ID=YOUR-GOOGLE-CLIENT-ID
+GOOGLE_CLIENT_SECRET=YOUR-CURRENT-GOOGLE-CLIENT-SECRET
+COMPANY_DOMAIN=contractor.atolls.com
+ADMIN_EMAIL=YOUR-REAL-ADMIN@contractor.atolls.com
+```
+
+Remove the old `DB_PATH` variable. Push your source changes and redeploy; clear the build cache if Netlify still uses the old dependencies. Keep preview deployments on a separate database if you enable them: do not seed or test changes against production accidentally.
+
+## 8. Verify the deployed app
+
+Open https://atolls-rh.netlify.app/api/health. It should return `{"ok":true,"database":"ready"}`.
+
+- **503:** check the Turso URL/token in Netlify's Functions environment and confirm setup/seed used the same database. Check token validity and function logs.
+- **404 or HTML:** check the repository base directory, Next.js framework integration and redirects.
+- **`redirect_uri_mismatch`:** the URI registered in Google must equal the production callback URL above, and `APP_URL` must match the hostname you are using.
+- **`/?error=Domain`:** use a verified Workspace account from the configured domain. Do not change the allowed domain to `gmail.com`; the current policy also requires a Workspace `hd` claim.
+- **`/?error=Configuration`:** verify Google credentials and the initial RH account.
+- **`/?error=Database`:** Google verified the identity, but database access failed. Verify the database connection and schema.
+- **`/api/portal` returns 401 before sign-in:** expected; this endpoint requires an active session.
+
+The browser now reports empty/non-JSON responses with the HTTP status and diagnostic guidance, instead of throwing `Unexpected end of JSON input`.
+
+## Email notifications on Netlify
+
+In-app notifications persist immediately in Turso. SMTP is optional. Add `SMTP_HOST`, `SMTP_PORT` (usually `587`), `SMTP_SECURE` (`false` for STARTTLS on 587, `true` for implicit TLS on 465), `SMTP_FROM`, and optional `SMTP_USER` / `SMTP_PASS` to Netlify's Functions environment.
+
+The included `netlify/functions/notifications.mjs` processes queued email every five minutes on the production deployment. It uses a bounded time budget and atomic message claims. Verify it appears with a Scheduled badge in Netlify and use Run now to test after setting SMTP. Unsent messages stay queued. Email delivery is at least once, so a rare crash after SMTP accepts a message can result in a duplicate.
+
+For a persistent Node server, `npm run worker` runs a continuous worker. Do not run that infinite loop as a Netlify function. `npm run notify` runs one delivery pass locally. Neither command is needed for in-app notifications.
+
+## Security and application behavior
+
+- Sessions are random opaque tokens; only their SHA-256 hashes are stored in Turso. Session cookies are HttpOnly, SameSite=Lax and Secure in production.
+- Each request checks the active account and current role. RH deactivation revokes sessions. Valid Google credentials cannot authenticate an inactive account; the attempt is audited and its supervisor is notified in-app.
+- Dev manages own records/work. Owner can approve direct-report leave and assign work to direct reports. RH manages the organization and sees the complete audit trail. All roles use shared room booking.
+- Self-approval, RH self-deactivation/demotion, supervisor cycles and deactivation of supervisors with active reports are rejected.
+- Booking conflict checks and inserts execute in the same write transaction. AsyncLocalStorage keeps each request's statements bound to its own transaction across `await` calls.
+- Public `/api/health` reports only readiness, never employees, credentials or database contents.
+
+## Build and checks
 
 ```bash
 npm test
@@ -78,43 +173,15 @@ npm run build
 npm start
 ```
 
-Tests use a separate temporary database. They exercise Google domain/identity policy, onboarding, scoped reads, unauthorized mutations, self-review prevention, leave notifications, room overlap checks, session revocation, inactive-login security notifications, invalid input and transactional access guards.
+Tests use temporary local libSQL databases with the same async client API; no Turso credentials are needed. Production imports only the HTTP transport. `npm run build` does not connect to or modify a database.
 
-## Hosting
+See `VALIDATION.md` for checks performed and remaining integration limitations. The interface remains English; language preferences are stored but translations are not implemented. Leave day totals count Monday–Friday without automatic holiday/entitlement calculations. Future schema changes require explicit migrations. The current setup command is an idempotent initial schema initializer, not a migration engine.
 
-Use a **single persistent Node.js host** with writable storage. SQLite is appropriate for this internal-tool baseline; do not place the app on an ephemeral filesystem or run replicas with separate databases. Keep the database and its WAL files on the same durable volume and take regular backups. A future multi-instance deployment should migrate to a shared relational database and distributed job queue.
+## Reference links
 
-A Dockerfile is included:
-
-```bash
-docker build -t atolls-hr .
-docker volume create atolls-data
-docker run --rm --env-file .env.local -v atolls-data:/data atolls-hr node scripts/seed.js
-docker run -d --name atolls-hr --env-file .env.local -p 3000:3000 -v atolls-data:/data atolls-hr
-docker run -d --name atolls-mail --env-file .env.local -v atolls-data:/data atolls-hr node scripts/worker.js
-```
-
-For these production containers, use an HTTPS `APP_URL` and a reverse proxy with TLS in front of port 3000. Secure cookies will not authenticate over plain HTTP. Do not set `DB_PATH` in the environment file when using the default Docker volume path, or set it to `/data/atolls.sqlite`.
-
-## Current scope
-
-This is an implemented starter application, not a configured live company deployment. Real OAuth and SMTP delivery require your organization's credentials. The UI is English; Deutsch/Français preferences are stored but translations are not yet implemented. Availability is manually updated rather than calculated from a recurring schedule. Leave totals count Monday–Friday; entitlement accrual, statutory holiday exclusions, partial days and payroll integrations are not implemented. The initial database schema initializes automatically; future schema changes need explicit versioned migrations. Audit events currently have no export or pagination UI. Meeting invitations are portal/email notifications, not Google Calendar events. Google OAuth and SMTP end-to-end checks must be completed with your own accounts before rollout.
-
-## Project structure
-
-```text
-app/portal.js                    React UI
-app/globals.css                  Responsive light/dark styling
-app/api/portal/route.js          Authenticated read/mutation API
-app/api/auth/google/route.js     OAuth initiation
-app/api/auth/callback/route.js   Verified OAuth callback
-app/api/auth/logout/route.js     Session revocation
-lib/db.js                       SQLite schema and transaction helpers
-lib/service.js                  Validated business operations and scoped reads
-lib/policy.js                   Access rules
-lib/identity.js                 Google identity and inactive-account handling
-lib/session.js                  Session cookies and active-account checks
-lib/notifications.js            SMTP outbox delivery
-scripts/                        Seed and email worker commands
-tests/security.test.js          Security and workflow regression tests
-```
+- Turso setup: https://docs.turso.tech/quickstart
+- Turso JavaScript/libSQL client: https://docs.turso.tech/sdk/ts/quickstart
+- Google OAuth web server setup: https://developers.google.com/identity/protocols/oauth2/web-server
+- Next.js on Netlify: https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/
+- Netlify function variables: https://docs.netlify.com/build/functions/environment-variables/
+- Netlify scheduled functions: https://docs.netlify.com/build/functions/scheduled-functions/

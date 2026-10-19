@@ -1,2 +1,3 @@
 import {deliverNotifications} from '../lib/notifications.js';
-console.log(await deliverNotifications());
+import {closeDatabase} from '../lib/db.js';
+try { console.log(await deliverNotifications()); } finally { closeDatabase(); }
