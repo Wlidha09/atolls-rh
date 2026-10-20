@@ -1,6 +1,6 @@
-# Validation — Turso update
+# Validation — Departments and Roles update
 
-- `npm test`: **28 tests passed**. Tests cover role-scoped reads and mutations, leave review/notifications, room conflicts, account deactivation, session revocation, inactive Google identity alerts, onboarding, SMTP delivery, async transaction rollback and request isolation, missing database configuration, and valid/empty/non-JSON HTTP response handling.
+- `npm test`: **36 tests passed**. Tests cover role-scoped reads and mutations, leave review/notifications, room conflicts, account deactivation, session revocation, inactive Google identity alerts, onboarding, SMTP delivery, async transaction rollback and request isolation, missing database configuration, and valid/empty/non-JSON HTTP response handling.
 - Tests execute database operations through the asynchronous `@libsql/client` API with isolated temporary local libSQL databases. Production imports `@libsql/client/http` and never opens a local file.
 - Next.js 16.4.0 production build: passed, including compilation and route generation, with no Turso or Google credentials available. Build does not initialize a database.
 - Production HTTP smoke checks: landing page returns 200, unauthenticated portal returns JSON 401, unconfigured health endpoint returns diagnostic JSON 503, and missing Google configuration redirects safely.
@@ -8,7 +8,7 @@
 
 The execution workspace cannot expose Node's resident-memory metrics. Build and HTTP verification used a temporary environment-only shim for that reporting API; it is not included in this project. No database/authentication behavior was bypassed. The test server was bound explicitly to loopback because this environment restricts network-interface enumeration.
 
-No live Turso credentials were available, so the actual hosted database, setup/seed commands against that database and Netlify deployment must be verified after configuration using `npm run db:check` and `/api/health`. Google sign-in with company accounts and company SMTP delivery also need your credentials. The included Netlify scheduled notification function follows the documented JavaScript format but was not deployed or triggered in Netlify here. Interactive browser checks and Docker execution were not repeated in this environment.
+No live Turso credentials were available, so the actual hosted database, setup/seed commands against that database and Netlify deployment must be verified after configuration using `npm run db:check` and `/api/health`. Google sign-in with company accounts and company SMTP delivery also need your credentials. The included Netlify scheduled notification function follows the documented JavaScript format but was not deployed or triggered in Netlify here. Docker execution was not repeated in this environment.
 
 ## One-time Netlify initialization update
 
@@ -17,3 +17,9 @@ The test suite now also covers opt-in production-only setup, preflight administr
 ## External administrator update
 
 Only the exact Google-verified ADMIN_EMAIL account may be outside COMPANY_DOMAIN. The account must be explicitly seeded as RH; there is no automatic privilege grant during sign-in. Other employees still require the exact Google Workspace domain and hd claim. Tests cover external administrator provisioning/sign-in, unverified and non-allowlisted external rejection, Google subject binding, inactive-account blocking/security notifications, and the account chooser domain hint. The production build passed. Google OAuth Audience must permit external accounts for a live external administrator; live Google verification remains to be performed with the configured account.
+
+## Departments and Roles update
+
+Eight additional automated tests cover legacy-schema migration without data/session loss, repeatable setup, Employee/Manager assignment with the legacy role constraint, Manager direct-report review, permission validation, protected system roles, custom role lifecycle and assignment, scope/permission escalation rejection, and own-role protection. The production build passed.
+
+Production browser checks used an isolated libSQL database and real service operations behind an intercepted portal API, without changing application authentication. Checks passed for separate navigation, all five system roles, the 32-checkbox matrix, custom role creation/editing/deletion, role choices in the employee form, dark/light themes, mobile layouts, no JavaScript errors and no page overflow. These checks do not validate live Google OAuth or a hosted Turso migration.

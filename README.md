@@ -2,6 +2,15 @@
 
 Full-stack JavaScript with Next.js App Router, Google Workspace OAuth and a remote **Turso libSQL** database. The server uses the HTTP client: no local SQLite file, writable disk or `node:sqlite` dependency is used in production. Database access, business operations, sessions, audits and notification outbox operations are asynchronous.
 
+## Update an existing Netlify site: Departments and Roles
+
+1. Replace the source in your connected repository with this complete updated project, preserving your own changes. Keep your existing Netlify environment variables.
+2. Add `INITIALIZE_DATABASE=true` with **Builds** scope and **Production** context for one production deployment. `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` must remain available to **Builds and Functions**.
+3. Deploy. This adds the role tables, Employee and Manager, and an optional employee role reference. Existing employee records, assigned Dev/Owner/RH roles and sessions are preserved.
+4. After the deployment succeeds, remove `INITIALIZE_DATABASE` and verify `/api/health` returns ready.
+
+The Roles page follows the supplied dark card and permission-matrix design. Default permissions preserve the existing application behavior: Employee matches Dev, Manager matches Owner, and RH retains organization administration. New company signups receive Employee. Custom roles can be created, edited and assigned from the employee form.
+
 ## Netlify setup without a terminal
 
 If you have already created a Turso libSQL database, you can initialize the application during one production Netlify deployment:
@@ -14,7 +23,7 @@ If you have already created a Turso libSQL database, you can initialize the appl
 6. Remove `INITIALIZE_DATABASE` after this deployment succeeds. Future builds then do not touch the database.
 7. Open your site's `/api/health`. It should return `{"ok":true,"database":"ready"}`. Then sign in with the seeded administrator and complete onboarding.
 
-Setup creates missing tables, departments, rooms and the configured initial administrator. It does not delete records, reset accounts, change existing roles, or reactivate employees. Preview/branch builds and local builds cannot use this automatic setup option. If setup fails, deployment stops and the existing deployed site is left in place. The schema initializer is idempotent; it is not a schema-upgrade migration engine.
+Setup creates missing tables, departments, rooms and the configured initial administrator. It does not delete records, reset accounts, change existing roles, or reactivate employees. Preview/branch builds and local builds cannot use this automatic setup option. If setup fails, deployment stops and the existing deployed site is left in place. Setup is idempotent and includes the additive roles migration described below; future schema changes still need explicit migrations.
 
 The documentation uses generic example domains so the application's public site URL and company domain are not repeated in these files. Keep secret scanning enabled. Only actual credentials need to be marked as secrets.
 
@@ -119,7 +128,7 @@ Open http://localhost:3000/api/health. Expected response:
 {"ok":true,"database":"ready"}
 ```
 
-Then open http://localhost:3000 and sign in with the seeded administrator. Complete the onboarding profile. Newly seen company accounts receive Dev access and must complete onboarding; HR can pre-create accounts and assign access.
+Then open http://localhost:3000 and sign in with the seeded administrator. Complete the onboarding profile. Newly seen company accounts receive Employee access and must complete onboarding; HR can pre-create accounts and assign access.
 
 ## 7. Update Netlify
 
@@ -176,7 +185,9 @@ For a persistent Node server, `npm run worker` runs a continuous worker. Do not 
 
 - Sessions are random opaque tokens; only their SHA-256 hashes are stored in Turso. Session cookies are HttpOnly, SameSite=Lax and Secure in production.
 - Each request checks the active account and current role. RH deactivation revokes sessions. Valid Google credentials cannot authenticate an inactive account; the attempt is audited and its supervisor is notified in-app.
-- Dev manages own records/work. Owner can approve direct-report leave and assign work to direct reports. RH manages the organization and sees the complete audit trail. All roles use shared room booking.
+- Employee and Dev manage their own records/work. Manager and Owner can approve direct-report leave and assign work to direct reports. RH manages the organization and sees the complete audit trail. Existing Dev, Owner and RH rights are preserved. All five system roles use shared room booking.
+- Departments and Roles have separate pages. Roles shows permission chips and supports custom roles with a View/Create/Edit/Delete matrix and personal, direct-report or organization scope. Permission checks run on the server using the current assigned role.
+- System roles are protected. Custom roles may only grant permissions and scope held by their creator; an assigned role cannot be deleted. Personal profile and work-ticket actions retain their existing baseline access. Matrix permissions govern the existing module actions; they do not add new CRUD screens to other modules.
 - Self-approval, RH self-deactivation/demotion, supervisor cycles and deactivation of supervisors with active reports are rejected.
 - Booking conflict checks and inserts execute in the same write transaction. AsyncLocalStorage keeps each request's statements bound to its own transaction across `await` calls.
 - Public `/api/health` reports only readiness, never employees, credentials or database contents.
@@ -191,7 +202,7 @@ npm start
 
 Tests use temporary local libSQL databases with the same async client API; no Turso credentials are needed. Production imports only the HTTP transport. `npm run build` does not connect to a database unless the one-time production Netlify setup flag is enabled.
 
-See `VALIDATION.md` for checks performed and remaining integration limitations. The interface remains English; language preferences are stored but translations are not implemented. Leave day totals count Monday–Friday without automatic holiday/entitlement calculations. Future schema changes require explicit migrations. The current setup command is an idempotent initial schema initializer, not a migration engine.
+See `VALIDATION.md` for checks performed and remaining integration limitations. The interface remains English; language preferences are stored but translations are not implemented. Leave day totals count Monday–Friday without automatic holiday/entitlement calculations. Future schema changes require explicit migrations. The current setup command initializes the schema and applies the additive roles migration; it is not a general-purpose migration engine.
 
 ## Reference links
 

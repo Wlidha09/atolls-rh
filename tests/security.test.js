@@ -213,7 +213,7 @@ test('inactive Google identity is rejected and supervisor receives a persistent 
     availability: 'Remote'
   }), 401);
 });
-test('first-time Google users receive Dev access and incomplete onboarding', async () => {
+test('first-time Google users receive Employee access and incomplete onboarding', async () => {
   const fresh = await acceptGoogleIdentity({
     sub: 'new-google-sub',
     email: 'new@atolls.test',
@@ -221,7 +221,7 @@ test('first-time Google users receive Dev access and incomplete onboarding', asy
     hd: 'atolls.test',
     name: 'New Person'
   });
-  assert.equal(fresh.role, 'Dev');
+  assert.equal(fresh.role, 'Employee');
   assert.equal(fresh.onboarded, 0);
   await expectStatus(async () => await mutate(fresh, 'ticket', {
     title: 'Premature',
