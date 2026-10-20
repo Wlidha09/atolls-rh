@@ -6,10 +6,12 @@ Full-stack JavaScript with Next.js App Router, Google Workspace OAuth and a remo
 
 1. Replace the source in your connected repository with this complete updated project, preserving your own changes. Keep your existing Netlify environment variables.
 2. Add `INITIALIZE_DATABASE=true` with **Builds** scope and **Production** context for one production deployment. `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` must remain available to **Builds and Functions**.
-3. Deploy. This adds the role tables, Employee and Manager, and an optional employee role reference. Existing employee records, assigned Dev/Owner/RH roles and sessions are preserved.
+3. Deploy. This adds the role tables, Employee and Manager, and an optional employee role reference. Existing employee records, assigned Dev/Owner/RH roles and sessions are preserved. The update also adds a Manager checkbox; current supervisors and employees already assigned the Manager role are checked once during migration. Later checkbox changes are preserved.
 4. After the deployment succeeds, remove `INITIALIZE_DATABASE` and verify `/api/health` returns ready.
 
 The Roles page follows the supplied dark card and permission-matrix design. Default permissions preserve the existing application behavior: Employee matches Dev, Manager matches Owner, and RH retains organization administration. New company signups receive Employee. Custom roles can be created, edited and assigned from the employee form.
+
+Manager status is independent of the access role. Only active employees with Manager checked appear in Team Leader (Supervisor), and the server rejects other supervisor assignments. Reassign active direct reports before unchecking Manager or deactivating a supervisor. Leave approval permissions still come from the access role; choose a role with team/global scope and Leave Approvals → Edit for approvers.
 
 ## Netlify setup without a terminal
 
@@ -187,7 +189,7 @@ For a persistent Node server, `npm run worker` runs a continuous worker. Do not 
 - Each request checks the active account and current role. RH deactivation revokes sessions. Valid Google credentials cannot authenticate an inactive account; the attempt is audited and its supervisor is notified in-app.
 - Employee and Dev manage their own records/work. Manager and Owner can approve direct-report leave and assign work to direct reports. RH manages the organization and sees the complete audit trail. Existing Dev, Owner and RH rights are preserved. All five system roles use shared room booking.
 - Departments and Roles have separate pages. Roles shows permission chips and supports custom roles with a View/Create/Edit/Delete matrix and personal, direct-report or organization scope. Permission checks run on the server using the current assigned role.
-- System roles are protected. Custom roles may only grant permissions and scope held by their creator; an assigned role cannot be deleted. Personal profile and work-ticket actions retain their existing baseline access. Matrix permissions govern the existing module actions; they do not add new CRUD screens to other modules.
+- Role cards include Edit and Delete for authorized users, including system roles. System role names stay fixed; their permissions can be edited by another authorized administrator. Employee and RH are required by sign-in and provisioning and cannot be deleted. Other unused roles can be deleted and are not restored by repeated setup. Custom roles may only grant permissions and scope held by their creator; an assigned role cannot be deleted. Personal profile and work-ticket actions retain their existing baseline access. Matrix permissions govern the existing module actions; they do not add new CRUD screens to other modules.
 - Self-approval, RH self-deactivation/demotion, supervisor cycles and deactivation of supervisors with active reports are rejected.
 - Booking conflict checks and inserts execute in the same write transaction. AsyncLocalStorage keeps each request's statements bound to its own transaction across `await` calls.
 - Public `/api/health` reports only readiness, never employees, credentials or database contents.

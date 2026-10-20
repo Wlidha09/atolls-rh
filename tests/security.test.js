@@ -33,6 +33,7 @@ const {
 await run("INSERT INTO departments(name) VALUES('Engineering')");
 await run("INSERT INTO employees(id,email,name,title,department_id,role,onboarded) VALUES(1,'hr@atolls.test','HR','Administrator',1,'RH',1)");
 await run("INSERT INTO employees(id,email,name,title,department_id,role,onboarded,supervisor_id) VALUES(2,'owner@atolls.test','Owner','Lead',1,'Owner',1,1),(3,'dev@atolls.test','Dev','Engineer',1,'Dev',1,2),(4,'other@atolls.test','Other','Engineer',1,'Dev',1,1)");
+await run("UPDATE employees SET is_manager=1 WHERE id IN (1,2)");
 await run("INSERT INTO rooms(id,name,capacity,equipment) VALUES(1,'Cove',6,'Screen')");
 const employee = async id => await one('SELECT * FROM employees WHERE id=?', id),
   hr = await employee(1),

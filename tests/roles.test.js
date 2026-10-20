@@ -15,7 +15,7 @@ const dir=mkdtempSync(join(tmpdir(),'atolls-roles-'));
 const client=createClient({url:pathToFileURL(join(dir,'test.sqlite')).href});
 installTestClient(client);
 // Simulate the previously deployed schema and retain existing records and sessions.
-const oldSchema=schema.replace(/CREATE TABLE IF NOT EXISTS roles \([\s\S]*?\);/,'').replace(/CREATE TABLE IF NOT EXISTS schema_migrations[^;]*;/,'').replace(',\n assigned_role_id INTEGER REFERENCES roles(id)','');
+const oldSchema=schema.replace(/CREATE TABLE IF NOT EXISTS roles \([\s\S]*?\);/,'').replace(/CREATE TABLE IF NOT EXISTS schema_migrations[^;]*;/,'').replace(/,\n assigned_role_id INTEGER REFERENCES roles\(id\),\n is_manager INTEGER NOT NULL DEFAULT 0 CHECK\(is_manager IN \(0,1\)\)/,'');
 await client.executeMultiple(oldSchema);
 await run("INSERT INTO departments(id,name) VALUES(1,'Engineering')");
 await run("INSERT INTO employees(id,email,name,title,department_id,role,onboarded,supervisor_id) VALUES(1,'hr@company.test','HR','HR',1,'RH',1,NULL),(2,'owner@company.test','Owner','Lead',1,'Owner',1,1),(3,'dev@company.test','Dev','Engineer',1,'Dev',1,2),(4,'other@company.test','Other','Engineer',1,'Dev',1,1)");
@@ -61,10 +61,15 @@ test('role creation is restricted and case-insensitive duplicate names are rejec
  const inconsistent=emptyPermissions();inconsistent.roles.create=true;
  await assert.rejects(()=>mutate(hr,'roleCreate',{name:'Missing view',scope:'self',permissions:inconsistent}),e=>e.status===400);
 });
-test('system roles cannot be edited or deleted',async()=>{
+test('system permissions can be edited but required roles and system names are protected',async()=>{
  const system=(await listRoles()).find(role=>role.name==='Employee');
- await assert.rejects(()=>mutate(hr,'roleEdit',{id:system.id,name:system.name,scope:system.scope,permissions:system.permissions}),e=>e.status===403);
- await assert.rejects(()=>mutate(hr,'roleDelete',{id:system.id}),e=>e.status===403);
+ const permissions=structuredClone(system.permissions);permissions.logs.view=false;
+ await mutate(hr,'roleEdit',{id:system.id,name:system.name,scope:system.scope,permissions});
+ assert.equal((await employee(3)).permissions.logs.view,false);
+ await assert.rejects(()=>mutate(hr,'roleEdit',{id:system.id,name:'Renamed',scope:system.scope,permissions}),e=>e.status===400);
+ await assert.rejects(()=>mutate(hr,'roleDelete',{id:system.id}),e=>e.status===409);
+ const dev=(await listRoles()).find(role=>role.name==='Dev');
+ await assert.rejects(()=>mutate(hr,'roleDelete',{id:dev.id}),e=>e.status===409);
 });
 test('custom roles can be assigned, constrain server access, and remain linked after renaming',async()=>{
  const role=(await listRoles()).find(role=>role.name==='Read only');
@@ -90,4 +95,22 @@ test('a custom role creator cannot escalate beyond their own permissions or scop
 });
 test('administrators cannot change their own assigned role',async()=>{
  await assert.rejects(()=>mutate(hr,'employeeUpdate',{id:1,role:'Employee',active:true,department_id:1,supervisor_id:null}),e=>e.status===400);
+});
+
+test('only active employees explicitly marked Manager can be assigned as supervisor',async()=>{
+ await assert.rejects(()=>mutate(hr,'employeeUpdate',{id:4,role:'Employee',active:true,department_id:1,supervisor_id:3}),e=>e.status===400);
+ await mutate(hr,'employeeUpdate',{id:3,role:'Employee',active:true,is_manager:true,department_id:1,supervisor_id:2});
+ await mutate(hr,'employeeUpdate',{id:4,role:'Employee',active:true,is_manager:false,department_id:1,supervisor_id:3});
+ assert.equal((await employee(4)).supervisor_id,3);
+ await assert.rejects(()=>mutate(hr,'employeeUpdate',{id:3,role:'Employee',active:true,is_manager:false,department_id:1,supervisor_id:2}),e=>e.status===400);
+ await mutate(hr,'employeeUpdate',{id:4,role:'Employee',active:true,is_manager:false,department_id:1,supervisor_id:null});
+ await mutate(hr,'employeeUpdate',{id:3,role:'Employee',active:true,is_manager:false,department_id:1,supervisor_id:2});
+ assert.equal((await employee(3)).is_manager,0);
+ await initializeSchema();assert.equal((await employee(3)).is_manager,0);
+ await assert.rejects(()=>mutate(hr,'employeeUpdate',{id:4,role:'Employee',active:true,department_id:1,supervisor_id:3}),e=>e.status===400);
+});
+test('unused system roles can be deleted and repeated setup does not restore them',async()=>{
+ const dev=(await listRoles()).find(role=>role.name==='Dev');
+ await mutate(hr,'roleDelete',{id:dev.id});
+ await initializeSchema();assert.equal((await listRoles()).some(role=>role.name==='Dev'),false);
 });
