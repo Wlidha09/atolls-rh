@@ -69,7 +69,7 @@ Formule : jours du mois − samedis/dimanches − jours fériés configurés en 
 
 Node.js 24. Copie `.env.example` en `.env.local`, complète les valeurs hors Git, puis `npm ci` et `npm run dev`. Les builds n'appellent pas Firebase sans flag explicite. Les commandes facultatives sont `npm run db:setup`, `npm run seed`, `npm run db:check`, `npm run db:migrate:turso`. Aucune commande locale n'est nécessaire avec le chemin Netlify décrit ci-dessus.
 
-Google OAuth garde ces URL pour ton site : origine `https://atolls-rh.netlify.app`, callback `https://atolls-rh.netlify.app/api/auth/callback`. Si `ADMIN_EMAIL` est externe, l'audience Google doit autoriser les comptes externes et inclure ce compte comme utilisateur de test lorsque l'application est en mode Testing. L'authentification conserve state, PKCE, nonce et la vérification de signature du jeton Google.
+Google OAuth garde ces URL pour ton site : origine ``, callback ``. Si `ADMIN_EMAIL` est externe, l'audience Google doit autoriser les comptes externes et inclure ce compte comme utilisateur de test lorsque l'application est en mode Testing. L'authentification conserve state, PKCE, nonce et la vérification de signature du jeton Google.
 
 Voir `VALIDATION.md` pour les contrôles réellement effectués. Le service SMTP facultatif et la fonction planifiée Netlify conservent la livraison des notifications ; sans SMTP, les notifications restent disponibles dans le portail. L'interface reste en anglais ; la préférence de langue est mémorisée sans traduction automatique.
 
