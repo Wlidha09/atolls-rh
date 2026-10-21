@@ -1,6 +1,6 @@
 # Validation — Departments and Roles update
 
-- `npm test`: **38 tests passed**. Tests cover role-scoped reads and mutations, leave review/notifications, room conflicts, account deactivation, session revocation, inactive Google identity alerts, onboarding, SMTP delivery, async transaction rollback and request isolation, missing database configuration, and valid/empty/non-JSON HTTP response handling.
+- `npm test`: **46 tests passed**. Tests cover role-scoped reads and mutations, leave review/notifications, room conflicts, account deactivation, session revocation, inactive Google identity alerts, onboarding, SMTP delivery, async transaction rollback and request isolation, missing database configuration, and valid/empty/non-JSON HTTP response handling.
 - Tests execute database operations through the asynchronous `@libsql/client` API with isolated temporary local libSQL databases. Production imports `@libsql/client/http` and never opens a local file.
 - Next.js 16.4.0 production build: passed, including compilation and route generation, with no Turso or Google credentials available. Build does not initialize a database.
 - Production HTTP smoke checks: landing page returns 200, unauthenticated portal returns JSON 401, unconfigured health endpoint returns diagnostic JSON 503, and missing Google configuration redirects safely.
@@ -29,3 +29,9 @@ Production browser checks used an isolated libSQL database and real service oper
 Role actions now include system-role permission editing and deletion of unused optional system roles. The required Employee/RH roles, fixed system names, own-role edits and roles assigned to employees remain protected. Two additional tests cover manager-only supervisor assignment, independent checkbox changes, reporting-line protection, repeatable manager migration, and persistence of deleted optional roles. Security fixtures explicitly mark supervisors as managers.
 
 The updated browser checks also verify Edit/Delete controls on all five system cards, saving the Manager checkbox without a supervisor, checkbox persistence, and a Team Leader list that includes a checked employee and excludes an unchecked employee. Supervisor is optional in the form.
+
+## Monthly Work Tickets calculator
+
+Eight additional tests cover the October reference (31 − 9 − 3 = 19), duplicate holidays and overlapping leave, approved-only leave clipped across months/years, leap February and full-month leave, invalid periods, employee/manager personal-only report access, HR totals including inactive employees, and reloading current access to reject stale privileges/inactive accounts. Calculations use UTC date-only arithmetic. Next.js production build passed with the new authenticated `/api/work-days` route. No hosted database or Netlify deployment was performed.
+
+Browser checks passed against the production build with isolated libSQL fixtures and the real report service: reference calculation, HR employee selection/search and aggregate totals, month/year changes and leap February, employee personal-only view, light/dark themes, mobile layouts, no page overflow or JavaScript errors. The actual unauthenticated report endpoint returned JSON 401. Browser checks used intercepted authenticated API requests; live Google OAuth/Netlify/Turso were not exercised.

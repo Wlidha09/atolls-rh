@@ -2,6 +2,16 @@
 
 Full-stack JavaScript with Next.js App Router, Google Workspace OAuth and a remote **Turso libSQL** database. The server uses the HTTP client: no local SQLite file, writable disk or `node:sqlite` dependency is used in production. Database access, business operations, sessions, audits and notification outbox operations are asynchronous.
 
+## Work Tickets: monthly net worked days
+
+Work Tickets is now the calendar calculator shown in the reference, replacing the task board. Choose a month and year. Employees and managers see only their own calculation. HR administrators (organization scope with Employees View and Edit) can select an employee and see a searchable table of all employees, including inactive accounts, with each total and the sum for the listed employees.
+
+The formula is calendar days minus Saturdays/Sundays, configured weekday public holidays, and approved weekday leave. Dates belong to one category, so duplicate holidays and leave/holiday/weekend overlaps are deducted once. Leave is clipped to the selected month, including year boundaries; pending and rejected leave does not count. All holidays recorded in Availability & Holidays are used as the shared calendar because employees do not yet have an assigned office/calendar. Office-day preferences describe in-office presence and do not reduce working days.
+
+This is a full-month calendar estimate, including future dates, not a clock-in attendance record. Employment start/end dates, part-time contracts, half-days and office-specific holiday assignment are not modeled. Inactive accounts remain listed for HR and use the same full-month formula, since deactivation dates are not stored. Legacy task data is retained in the database.
+
+Deploy the updated source normally with `npm run build`. No additional database migration or `INITIALIZE_DATABASE=true` is required for this calculator if the previous Roles/Manager update has already been applied. Leave the initialization flag disabled on an existing initialized site.
+
 ## Update an existing Netlify site: Departments and Roles
 
 1. Replace the source in your connected repository with this complete updated project, preserving your own changes. Keep your existing Netlify environment variables.
