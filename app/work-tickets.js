@@ -7,9 +7,10 @@ function Calculator(){return <svg viewBox="0 0 24 24" fill="none" stroke="curren
 export default function WorkTickets({me}) {
   const now = new Date();
   const [year,setYear]=useState(now.getFullYear()),[month,setMonth]=useState(now.getMonth()+1),[employeeId,setEmployeeId]=useState(me.id),[report,setReport]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[query,setQuery]=useState(''),[retry,setRetry]=useState(0);
+  useEffect(()=>{const refresh=()=>setRetry(value=>value+1);window.addEventListener('atolls:data-changed',refresh);return ()=>window.removeEventListener('atolls:data-changed',refresh)},[]);
   useEffect(()=>{
     const controller = new AbortController();
-    setLoading(true);setError('');setReport(null);
+    setLoading(true);setError('');
     (async()=>{try{
       const response=await fetch(`/api/work-days?year=${year}&month=${month}`,{cache:'no-store',signal:controller.signal});
       const value=await readJsonResponse(response);
@@ -30,7 +31,7 @@ export default function WorkTickets({me}) {
     </div>
     {loading&&<p className="work-days-message" role="status">Calculating work days…</p>}
     {error&&<div className="error" role="alert">{error} <button type="button" className="link" onClick={()=>setRetry(value=>value+1)}>Retry</button></div>}
-    {!loading&&selected&&<>
+    {selected&&report.year===year&&report.month===month&&<>
       <article className="work-days-card" aria-label="Employee work days">
         <div className="work-days-card-heading"><span className="work-days-icon"><Calculator/></span><div><h2>{selected.name}</h2><p>{label}</p></div></div>
         <dl>{metrics.map(([name,key,color])=><div className="work-days-line" key={key}><dt>{name}</dt><dd className={color}>{key==='totalDays'?'':'−'}{selected[key]}</dd></div>)}

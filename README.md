@@ -1,226 +1,80 @@
-# Atolls HR Portal — Turso + Netlify
+# Atolls HR — Next.js + Firebase Realtime Database
 
-Full-stack JavaScript with Next.js App Router, Google Workspace OAuth and a remote **Turso libSQL** database. The server uses the HTTP client: no local SQLite file, writable disk or `node:sqlite` dependency is used in production. Database access, business operations, sessions, audits and notification outbox operations are asynchronous.
+Version Firebase du portail RH : connexion Google existante, compte `ADMIN_EMAIL` externe autorisé avec son rôle actuel (y compris Dev), rôles et départements séparés, statut Manager, congés, réunions, notifications et calcul mensuel Work Tickets.
 
-## Work Tickets: monthly net worked days
+Les données RH sont privées. Le navigateur écoute uniquement un marqueur de changement Firebase, puis recharge les données autorisées via Next.js. Les rôles et les sessions sont contrôlés côté serveur. Aucune clé privée ne doit entrer dans Git ou dans une variable `NEXT_PUBLIC_`.
 
-Work Tickets is now the calendar calculator shown in the reference, replacing the task board. Choose a month and year. Employees and managers see only their own calculation. HR administrators (organization scope with Employees View and Edit) can select an employee and see a searchable table of all employees, including inactive accounts, with each total and the sum for the listed employees.
+## Migrer ton site Netlify existant, sans terminal
 
-The formula is calendar days minus Saturdays/Sundays, configured weekday public holidays, and approved weekday leave. Dates belong to one category, so duplicate holidays and leave/holiday/weekend overlaps are deducted once. Leave is clipped to the selected month, including year boundaries; pending and rejected leave does not count. All holidays recorded in Availability & Holidays are used as the shared calendar because employees do not yet have an assigned office/calendar. Office-day preferences describe in-office presence and do not reduce working days.
+### 1. Créer Firebase
 
-This is a full-month calendar estimate, including future dates, not a clock-in attendance record. Employment start/end dates, part-time contracts, half-days and office-specific holiday assignment are not modeled. Inactive accounts remain listed for HR and use the same full-month formula, since deactivation dates are not stored. Legacy task data is retained in the database.
+1. Ouvre https://console.firebase.google.com/ et crée un projet.
+2. Dans **Build → Realtime Database → Create database**, choisis **Realtime Database**, pas Cloud Firestore. Choisis une région proche de tes fonctions Netlify. Commence en **mode verrouillé**.
+3. Copie l'URL exacte affichée : `https://...firebasedatabase.app` ou `https://...firebaseio.com`.
+4. Dans l'onglet **Rules**, remplace les règles par le contenu de `firebase/database.rules.json`, puis publie. La lecture/écriture publique reste interdite. Seul le marqueur `atolls/revision` peut être lu par un utilisateur Firebase ayant une session Atolls active et non expirée. Les clients ne peuvent pas lire les dossiers RH ni écrire directement.
+5. Dans **Build → Authentication**, clique sur **Get started**. Les connexions Firebase utilisent des jetons personnalisés créés par le serveur ; la connexion Google du portail reste inchangée. Aucun fournisseur Anonymous/Email-Password ne doit être activé pour ce projet.
+6. Dans **Project settings → General**, ajoute une application Web et récupère la propriété `apiKey` de sa configuration.
+7. Dans **Project settings → Service accounts**, génère une clé privée. Garde le fichier JSON hors du dépôt. Utilise un compte de service de ce même projet ayant l'accès administrateur à Realtime Database et l'accès Firebase Authentication nécessaire aux jetons personnalisés.
 
-Deploy the updated source normally with `npm run build`. No additional database migration or `INITIALIZE_DATABASE=true` is required for this calculator if the previous Roles/Manager update has already been applied. Leave the initialization flag disabled on an existing initialized site.
+### 2. Variables Netlify
 
-## Update an existing Netlify site: Departments and Roles
+Dans les variables d'environnement du site, ajoute ces valeurs avec **Builds et Functions**, contexte **Production** :
 
-1. Replace the source in your connected repository with this complete updated project, preserving your own changes. Keep your existing Netlify environment variables.
-2. Add `INITIALIZE_DATABASE=true` with **Builds** scope and **Production** context for one production deployment. `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` must remain available to **Builds and Functions**.
-3. Deploy. This adds the role tables, Employee and Manager, and an optional employee role reference. Existing employee records, assigned Dev/Owner/RH roles and sessions are preserved. The update also adds a Manager checkbox; current supervisors and employees already assigned the Manager role are checked once during migration. Later checkbox changes are preserved.
-4. After the deployment succeeds, remove `INITIALIZE_DATABASE` and verify `/api/health` returns ready.
-
-The Roles page follows the supplied dark card and permission-matrix design. Default permissions preserve the existing application behavior: Employee matches Dev, Manager matches Owner, and RH retains organization administration. New company signups receive Employee. Custom roles can be created, edited and assigned from the employee form.
-
-Manager status is independent of the access role. Only active employees with Manager checked appear in Team Leader (Supervisor), and the server rejects other supervisor assignments. Reassign active direct reports before unchecking Manager or deactivating a supervisor. Leave approval permissions still come from the access role; choose a role with team/global scope and Leave Approvals → Edit for approvers.
-
-## Netlify setup without a terminal
-
-If you have already created a Turso libSQL database, you can initialize the application during one production Netlify deployment:
-
-1. Update the source in the repository connected to Netlify with this project. Keep the build command `npm run build`; it now includes an optional setup step.
-2. In Netlify environment variables, verify `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are available to both Builds and Functions in the Production context.
-3. Set `ADMIN_EMAIL` to the exact Google account that should be the initial administrator. Its domain may differ from `COMPANY_DOMAIN`, including a personal Gmail address.
-4. Add `INITIALIZE_DATABASE=true`, with Builds scope and Production context only.
-5. Trigger a production deployment. Its build log should say `Database setup complete.` before the Next.js build begins.
-6. Remove `INITIALIZE_DATABASE` after this deployment succeeds. Future builds then do not touch the database.
-7. Open your site's `/api/health`. It should return `{"ok":true,"database":"ready"}`. Then sign in with the seeded administrator and complete onboarding.
-
-Setup creates missing tables, departments, rooms and the configured initial administrator. It does not delete records, reset accounts, change existing roles, or reactivate employees. Preview/branch builds and local builds cannot use this automatic setup option. If setup fails, deployment stops and the existing deployed site is left in place. Setup is idempotent and includes the additive roles migration described below; future schema changes still need explicit migrations.
-
-The documentation uses generic example domains so the application's public site URL and company domain are not repeated in these files. Keep secret scanning enabled. Only actual credentials need to be marked as secrets.
-
-## 1. Create a Turso account and libSQL database
-
-Visit https://turso.tech/ and create an account. Install the Turso CLI using the instructions at https://docs.turso.tech/cli/installation (macOS, Linux, or WSL on Windows). Then open a terminal:
-
-```bash
-turso auth login
-turso db create atolls-hr
-turso db show atolls-hr --url
-turso db tokens create atolls-hr
-```
-
-Use `turso auth signup` instead of `login` if you still need to register. This project uses **libSQL**. Omit the `--tursodb` flag: that flag selects Turso's other engine and SDK. Copy the exact URL returned by the CLI and the database access token. Keep the token private.
-
-## 2. Install this updated project
-
-Install Node.js **24**, extract the archive, and open a terminal inside `atolls-hr`, where `package.json` lives:
-
-```bash
-npm ci
-```
-
-Use this entire updated project, not only `lib/db.js`: the service, OAuth callback, sessions, tests and scripts also changed to use async database calls. Preserve your own uncommitted customizations when replacing an existing checkout. This archive contains no real credentials.
-
-## 3. Create `.env.local`
-
-Copy `.env.example` to `.env.local` in the project root. On macOS/Linux/WSL:
-
-```bash
-cp .env.example .env.local
-```
-
-On Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env.local
-```
-
-Edit `.env.local`:
-
-```env
-APP_URL=http://localhost:3000
-TURSO_DATABASE_URL=libsql://COPY-THE-EXACT-URL-FROM-TURSO
-TURSO_AUTH_TOKEN=YOUR-DATABASE-TOKEN
-GOOGLE_CLIENT_ID=YOUR-GOOGLE-OAUTH-CLIENT-ID
-GOOGLE_CLIENT_SECRET=YOUR-NEW-GOOGLE-OAUTH-CLIENT-SECRET
-COMPANY_DOMAIN=example.com
-ADMIN_EMAIL=YOUR-ADMIN@example.net
-```
-
-`ADMIN_EMAIL` may be a Google account on a different domain, including Gmail. Only this exact verified address is exempt from the employee domain restriction. No variables in this list need `NEXT_PUBLIC_`. Do not commit `.env.local` or share its contents. If a credential has previously been shared, replace it before use.
-
-## 4. Initialize the remote database once
-
-These commands operate on the **remote Turso database configured in `.env.local`**:
-
-```bash
-npm run db:setup
-npm run seed
-npm run db:check
-```
-
-Expected final output: `Database connection, tables and administrator: OK.`
-
-`db:setup` creates missing tables; `seed` creates the initial RH administrator, five departments and three rooms. These commands are repeatable: they do not clear tables, overwrite employee profiles or reactivate inactive accounts. For Netlify, use the one-time setup flag above and remove it afterward. Do not expose setup as a public web endpoint. `ADMIN_EMAIL` alone does not create an account; the seed command must run.
-
-This starts a fresh remote database. Existing SQLite data is not imported automatically. If you have records to retain, back up the original database and plan a separate data import before switching production.
-
-## 5. Configure Google OAuth
-
-In Google Cloud Console → Google Auth Platform:
-
-1. Configure Branding and Audience. If ADMIN_EMAIL is outside your Workspace organization, select External. While the app is in Testing, add the administrator and any required employee test accounts under Test users. Use Internal only when every allowed account belongs to that organization.
-2. Open Clients → Create client → Web application.
-3. Add the production authorized JavaScript origin:
-
-```text
-https://your-site.netlify.app
-```
-
-4. Add this exact authorized redirect URI:
-
-```text
-https://your-site.netlify.app/api/auth/callback
-```
-
-For local testing, also add origin `http://localhost:3000` and redirect URI `http://localhost:3000/api/auth/callback`.
-
-Copy the OAuth client ID and current client secret into the server environment. Database tokens and Google OAuth credentials are separate. Ordinary employees must have a verified Workspace identity with `hd` matching `COMPANY_DOMAIN`. The exact verified `ADMIN_EMAIL` address is an exception and may be outside that domain; it must be explicitly seeded as RH before signing in. Other personal accounts remain blocked. For an external administrator, set Google Auth Platform Audience to External and, while Testing, add that administrator under Test users. An Internal Google audience will block accounts outside the organization before the app can authenticate them.
-
-## 6. Test locally
-
-```bash
-npm run dev
-```
-
-Open http://localhost:3000/api/health. Expected response:
-
-```json
-{"ok":true,"database":"ready"}
-```
-
-Then open http://localhost:3000 and sign in with the seeded administrator. Complete the onboarding profile. Newly seen company accounts receive Employee access and must complete onboarding; HR can pre-create accounts and assign access.
-
-## 7. Update Netlify
-
-Replace the old source in the Git repository connected to the existing Netlify site, including `package.json`, `package-lock.json`, `netlify.toml`, `lib/`, `app/`, `scripts/` and `netlify/functions/`. Keep `.env.local` out of Git. The tracked `.env.example` contains only placeholders.
-
-Build settings:
-
-| Setting | Value |
+| Variable | Valeur |
 | --- | --- |
-| Base directory | Folder containing `package.json`; `atolls-hr` if your repository contains that folder, otherwise leave blank |
-| Build command | `npm run build` |
-| Publish directory | `.next`, relative to the base directory |
-| Node version | `24` |
+| `FIREBASE_PROJECT_ID` | `project_id` du JSON du compte de service |
+| `FIREBASE_DATABASE_URL` | URL exacte de Realtime Database |
+| `FIREBASE_CLIENT_EMAIL` | `client_email` du JSON |
+| `FIREBASE_PRIVATE_KEY` | Valeur complète `private_key`, sans guillemets extérieurs ; les séparateurs littéraux `\n` sont acceptés |
+| `FIREBASE_WEB_API_KEY` | `apiKey` de l'application Web Firebase |
 
-Use Netlify's Next.js framework integration. Do not publish a static export or drag only an `out`/`.next` folder into manual static hosting: API routes require the server-side framework deployment. Remove any old `/* /index.html 200` SPA catch-all redirect.
+Marque la clé privée comme secrète. Conserve Google OAuth, `APP_URL`, `COMPANY_DOMAIN`, `ADMIN_EMAIL` et SMTP existants. Ne préfixe pas les secrets par `NEXT_PUBLIC_`. La clé API Web Firebase est une configuration publique, pas une clé de compte de service ; elle est transmise uniquement au navigateur connecté. Les règles protègent les données indépendamment de cette clé.
 
-In Netlify → Project configuration → Environment variables, add the following for the Production deployment context, with **Builds and Functions** scope (or all scopes):
+### 3. Transférer Turso une seule fois
 
-```env
-APP_URL=https://your-site.netlify.app
-TURSO_DATABASE_URL=THE-SAME-URL-USED-LOCALLY
-TURSO_AUTH_TOKEN=THE-SAME-TOKEN-USED-LOCALLY
-GOOGLE_CLIENT_ID=YOUR-GOOGLE-CLIENT-ID
-GOOGLE_CLIENT_SECRET=YOUR-CURRENT-GOOGLE-CLIENT-SECRET
-COMPANY_DOMAIN=example.com
-ADMIN_EMAIL=YOUR-ADMIN@example.net
-```
+1. Conserve `TURSO_DATABASE_URL` et `TURSO_AUTH_TOKEN` disponibles aux **Builds → Production**. Un jeton Turso en lecture seule suffit si tu en disposes.
+2. La destination Firebase `/atolls` doit être vide : ne lance pas une initialisation avant l'import.
+3. Supprime/désactive `INITIALIZE_DATABASE`. Ajoute **`MIGRATE_TURSO_TO_FIREBASE=true`**, portée **Builds**, contexte **Production** uniquement.
+4. Préviens les utilisateurs de ne pas modifier les données pendant la bascule. Le dernier déploiement Turso reste actif pendant le build ; une modification faite après la capture de la source ne sera pas transférée. Garde une sauvegarde Turso avant la bascule. Si SMTP est actif, suspends aussi les envois pendant la bascule ; une file de notifications reprise après interruption peut sinon renvoyer un message.
+5. Remplace le code du dépôt connecté à Netlify par cette version complète. Garde `npm run build` et `.next`. Lance le déploiement Production.
+6. Le build lit un instantané cohérent de Turso, convertit les données JSON et les importe atomiquement dans Firebase. Il conserve les identifiants, comptes, rôles/permissions, profils, départements, congés, fériés, réunions, participants, anciens tickets, journaux et notifications. Les sessions ne sont pas transférées : chacun se reconnectera. La base Turso n'est pas modifiée.
+7. Le message attendu est **Turso import complete**. Si l’import réussit mais que la compilation échoue ensuite, retire le flag avant de relancer le déploiement : les données sont déjà dans Firebase. Après réussite, supprime `MIGRATE_TURSO_TO_FIREBASE` ainsi que les deux variables Turso de Netlify. Ne laisse pas le flag d'import actif pour les déploiements suivants : un second import est refusé pour protéger les données Firebase.
+8. Ouvre `/api/health` : la réponse doit contenir `ok: true` et `provider: firebase-realtime-database`. Connecte-toi avec ton compte existant ; son rôle est conservé, notamment Dev. Vérifie les employés, congés, rôles et Work Tickets avant d'autoriser les utilisateurs à reprendre les modifications.
 
-Remove the old `DB_PATH` variable. Push your source changes and redeploy; clear the build cache if Netlify still uses the old dependencies. Keep preview deployments on a separate database if you enable them: do not seed or test changes against production accidentally.
+Le code migré ne change pas ta base réelle tant que tu n'as pas configuré les accès et lancé l'import. Aucun jeton réel n'est inclus dans l'archive. Garde la base Turso et l'ancienne archive comme point de retour. Si des écritures ont commencé dans Firebase, un retour à Turso nécessitera leur réconciliation ; il ne faut pas basculer simplement vers l'ancien site en perdant ces changements.
 
-## 8. Verify the deployed app
+## Installation neuve, sans données Turso
 
-Open https://your-site.netlify.app/api/health. It should return `{"ok":true,"database":"ready"}`.
+N'active pas le flag d'import. Pour une base Firebase neuve, mets temporairement `INITIALIZE_DATABASE=true` en **Builds → Production**, puis déploie. Le projet crée les cinq rôles, les départements, les salles et un premier compte RH à l'adresse `ADMIN_EMAIL`. Retire le flag après réussite. Une initialisation répétée préserve les comptes actifs et leurs rôles ; elle ne réactive aucun compte désactivé. L'initialisation et l'import ne peuvent pas être activés ensemble.
 
-- **503:** check the Turso URL/token in Netlify's Functions environment and confirm setup/seed used the same database. Check token validity and function logs.
-- **404 or HTML:** check the repository base directory, Next.js framework integration and redirects.
-- **`redirect_uri_mismatch`:** the URI registered in Google must equal the production callback URL above, and `APP_URL` must match the hostname you are using.
-- **`/?error=Domain`:** use a verified Workspace account from the configured domain or the exact seeded `ADMIN_EMAIL`. Other external accounts are blocked. Keep `COMPANY_DOMAIN` set to the employee domain, not `gmail.com`.
-- **`/?error=Configuration`:** verify Google credentials and the initial RH account.
-- **`/?error=Database`:** Google verified the identity, but database access failed. Verify the database connection and schema.
-- **`/api/portal` returns 401 before sign-in:** expected; this endpoint requires an active session.
+Pour utiliser un compte configuré existant en **Dev**, conserve son rôle dans la source avant import. `ADMIN_EMAIL` autorise uniquement cette adresse Google vérifiée hors du domaine ; il ne donne pas de droits RH à la connexion. Garde un autre compte RH pour administrer le portail.
 
-The browser now reports empty/non-JSON responses with the HTTP status and diagnostic guidance, instead of throwing `Unexpected end of JSON input`.
+## Actualisation et sauvegardes
 
-## Email notifications on Netlify
+Firebase Realtime Database diffuse un marqueur de révision avec un jeton utilisateur lié à la session Atolls. Le serveur ne diffuse aucun dossier RH directement. Chaque changement déclenche un rafraîchissement des données autorisées et du calcul Work Tickets. Une vérification toutes les 30 secondes et au retour sur l'onglet complète ce mécanisme si le flux est interrompu.
 
-In-app notifications persist immediately in Turso. SMTP is optional. Add `SMTP_HOST`, `SMTP_PORT` (usually `587`), `SMTP_SECURE` (`false` for STARTTLS on 587, `true` for implicit TLS on 465), `SMTP_FROM`, and optional `SMTP_USER` / `SMTP_PASS` to Netlify's Functions environment.
+Les formulaires ouverts et les pages Profile/Settings reportent les rafraîchissements pour préserver les saisies. Après fermeture, les changements en attente sont chargés. Une sauvegarde affiche sa confirmation après l'écriture effective, puis recharge l'affichage en arrière-plan. Les modifications restent validées sur le serveur, et les comptes inactifs sont refusés à chaque requête.
 
-The included `netlify/functions/notifications.mjs` processes queued email every five minutes on the production deployment. It uses a bounded time budget and atomic message claims. Verify it appears with a Scheduled badge in Netlify and use Run now to test after setting SMTP. Unsent messages stay queued. Email delivery is at least once, so a rare crash after SMTP accepts a message can result in a duplicate.
+Le serveur fait une lecture Firebase par instantané métier, au lieu d'une requête réseau par employé/rôle et module. Les écritures utilisent des requêtes conditionnelles ETag avec reprise sur conflit. Réservation, validation du congé, audit et notifications sont validés atomiquement ; aucun envoi SMTP n'a lieu dans une transaction pouvant être rejouée.
 
-For a persistent Node server, `npm run worker` runs a continuous worker. Do not run that infinite loop as a Netlify function. `npm run notify` runs one delivery pass locally. Neither command is needed for in-app notifications.
+Cette version vise un portail interne de volume modéré : l'état de l'organisation est lu et validé comme une unité pour préserver les invariants RH. Un gros historique ou beaucoup d'écritures simultanées nécessiteraient une partition des données et des transactions. Aucun gain de délai en production n'a été mesuré avec tes comptes ; Firebase ne supprime pas la latence réseau ni les coûts de transfert.
 
-## Security and application behavior
+## Work Tickets
 
-- Sessions are random opaque tokens; only their SHA-256 hashes are stored in Turso. Session cookies are HttpOnly, SameSite=Lax and Secure in production.
-- Each request checks the active account and current role. RH deactivation revokes sessions. Valid Google credentials cannot authenticate an inactive account; the attempt is audited and its supervisor is notified in-app.
-- Employee and Dev manage their own records/work. Manager and Owner can approve direct-report leave and assign work to direct reports. RH manages the organization and sees the complete audit trail. Existing Dev, Owner and RH rights are preserved. All five system roles use shared room booking.
-- Departments and Roles have separate pages. Roles shows permission chips and supports custom roles with a View/Create/Edit/Delete matrix and personal, direct-report or organization scope. Permission checks run on the server using the current assigned role.
-- Role cards include Edit and Delete for authorized users, including system roles. System role names stay fixed; their permissions can be edited by another authorized administrator. Employee and RH are required by sign-in and provisioning and cannot be deleted. Other unused roles can be deleted and are not restored by repeated setup. Custom roles may only grant permissions and scope held by their creator; an assigned role cannot be deleted. Personal profile and work-ticket actions retain their existing baseline access. Matrix permissions govern the existing module actions; they do not add new CRUD screens to other modules.
-- Self-approval, RH self-deactivation/demotion, supervisor cycles and deactivation of supervisors with active reports are rejected.
-- Booking conflict checks and inserts execute in the same write transaction. AsyncLocalStorage keeps each request's statements bound to its own transaction across `await` calls.
-- Public `/api/health` reports only readiness, never employees, credentials or database contents.
+Un compte employé ou Manager reçoit uniquement son propre calcul mensuel. Les comptes ayant la portée organisation et les droits Employees View/Edit disposent de tous les employés, d'une recherche et du total de la liste.
 
-## Build and checks
+Formule : jours du mois − samedis/dimanches − jours fériés configurés en semaine − congés approuvés en semaine. Chaque date est déduite une seule fois. Tous les fériés configurés sont utilisés comme calendrier commun : les employés n'ont pas encore de calendrier de bureau individuel. Il s'agit d'une estimation calendaire du mois entier, pas d'un pointage de présence. Les contrats à temps partiel, demi-journées et dates d'entrée/sortie ne sont pas modélisés. Les préférences de jours au bureau ne réduisent pas les jours ouvrés. Les anciens tickets de tâches sont conservés mais le tableau Kanban n'est plus l'écran Work Tickets.
 
-```bash
-npm test
-npm run build
-npm start
-```
+## Développement et contrôles locaux
 
-Tests use temporary local libSQL databases with the same async client API; no Turso credentials are needed. Production imports only the HTTP transport. `npm run build` does not connect to a database unless the one-time production Netlify setup flag is enabled.
+Node.js 24. Copie `.env.example` en `.env.local`, complète les valeurs hors Git, puis `npm ci` et `npm run dev`. Les builds n'appellent pas Firebase sans flag explicite. Les commandes facultatives sont `npm run db:setup`, `npm run seed`, `npm run db:check`, `npm run db:migrate:turso`. Aucune commande locale n'est nécessaire avec le chemin Netlify décrit ci-dessus.
 
-See `VALIDATION.md` for checks performed and remaining integration limitations. The interface remains English; language preferences are stored but translations are not implemented. Leave day totals count Monday–Friday without automatic holiday/entitlement calculations. Future schema changes require explicit migrations. The current setup command initializes the schema and applies the additive roles migration; it is not a general-purpose migration engine.
+Google OAuth garde ces URL pour ton site : origine `https://atolls-rh.netlify.app`, callback `https://atolls-rh.netlify.app/api/auth/callback`. Si `ADMIN_EMAIL` est externe, l'audience Google doit autoriser les comptes externes et inclure ce compte comme utilisateur de test lorsque l'application est en mode Testing. L'authentification conserve state, PKCE, nonce et la vérification de signature du jeton Google.
 
-## Reference links
+Voir `VALIDATION.md` pour les contrôles réellement effectués. Le service SMTP facultatif et la fonction planifiée Netlify conservent la livraison des notifications ; sans SMTP, les notifications restent disponibles dans le portail. L'interface reste en anglais ; la préférence de langue est mémorisée sans traduction automatique.
 
-- Turso setup: https://docs.turso.tech/quickstart
-- Turso JavaScript/libSQL client: https://docs.turso.tech/sdk/ts/quickstart
-- Google OAuth web server setup: https://developers.google.com/identity/protocols/oauth2/web-server
-- Next.js on Netlify: https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/
-- Netlify function variables: https://docs.netlify.com/build/functions/environment-variables/
-- Netlify scheduled functions: https://docs.netlify.com/build/functions/scheduled-functions/
+Références officielles :
+- https://firebase.google.com/docs/database/rest/auth
+- https://firebase.google.com/docs/database/rest/save-data
+- https://firebase.google.com/docs/database/rest/retrieve-data
+- https://firebase.google.com/docs/auth/admin/create-custom-tokens

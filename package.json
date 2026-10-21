@@ -15,7 +15,8 @@
     "test": "node --test tests/*.test.js",
     "worker": "node --env-file=.env.local scripts/worker.js",
     "db:setup": "node --env-file=.env.local scripts/setup-db.js",
-    "db:check": "node --env-file=.env.local scripts/check-db.js"
+    "db:check": "node --env-file=.env.local scripts/check-db.js",
+    "db:migrate:turso": "node --env-file=.env.local scripts/migrate-turso.js"
   },
   "dependencies": {
     "@libsql/client": "0.18.0",

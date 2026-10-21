@@ -1,40 +1,17 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-const dir = mkdtempSync(join(tmpdir(), 'atolls-mail-'));
-
-const {
-  run,
-  one,
-  queueNotification,
-  default: db
-} = await import('../lib/db.js');
-const {createClient} = await import('@libsql/client/node');
-const {installTestClient,initializeSchema} = await import('../lib/db.js');
-const {pathToFileURL} = await import('node:url');
-process.env.NODE_ENV='test';
-installTestClient(createClient({url:pathToFileURL(join(dir,'mail.sqlite')).href}));
-await initializeSchema();
-const {
-  deliverNotifications
-} = await import('../lib/notifications.js');
-await run("INSERT INTO employees(id,email,name,role) VALUES(1,'supervisor@atolls.test','Supervisor','RH')");
-after(() => {
-  db.close();
-  rmSync(dir, {
-    recursive: true,
-    force: true
-  });
-});
+import {installTestTransport,initializeSchema,insert,rows,queueNotification} from '../lib/db.js';
+import {deliverNotifications} from '../lib/notifications.js';
+process.env.NODE_ENV='test';let root=null,version=0;
+installTestTransport(async(path,options={})=>{if(options.method==='PUT'){if(options.etag!==String(version))return {conflict:true};root=structuredClone(options.value);version++;return {value:root}}return {value:structuredClone(root),etag:String(version)}});
+await initializeSchema();await insert('employees',{id:1,email:'supervisor@atolls.test',name:'Supervisor',role:'RH',active:1});
 test('notifications stay queued when SMTP is not configured', async () => {
   delete process.env.SMTP_HOST;
   await queueNotification(1, 'Security alert', 'An inactive login was blocked.');
   const result = await deliverNotifications();
   assert.equal(result.sent, 0);
-  assert.equal((await one('SELECT email_status FROM notifications')).email_status, 'Queued');
+  assert.equal((await rows('notifications'))[0].email_status, 'Queued');
 });
 test('SMTP worker delivers queued security email and records delivery', async () => {
   let received = '';
@@ -75,7 +52,7 @@ test('SMTP worker delivers queued security email and records delivery', async ()
   try {
     const result = await deliverNotifications();
     assert.equal(result.sent, 1);
-    assert.equal((await one('SELECT email_status FROM notifications')).email_status, 'Sent');
+    assert.equal((await rows('notifications'))[0].email_status, 'Sent');
     assert.match(received, /Security alert/);
     assert.match(received, /inactive login/);
     assert.match(received, /supervisor@atolls.test/);

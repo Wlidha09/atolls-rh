@@ -1,0 +1,11 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "atolls": {
+      "revision": {
+        ".read": "auth != null && auth.uid === 'atolls-' + auth.token.employee_id && root.child('atolls/state/employees').child(auth.token.employee_id + '').child('active').val() === 1 && root.child('atolls/state/sessions').child(auth.token.session_hash).child('employee_id').val() === auth.token.employee_id && root.child('atolls/state/sessions').child(auth.token.session_hash).child('expires').val() > now"
+      }
+    }
+  }
+}

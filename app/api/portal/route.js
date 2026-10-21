@@ -1,4 +1,4 @@
-import { requireEmployee, checkOrigin } from '../../../lib/session.js';
+import { requireEmployee, checkOrigin, withEmployee } from '../../../lib/session.js';
 import { snapshot, mutate } from '../../../lib/service.js';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,7 +12,7 @@ function error(e) {
 }
 export async function GET() {
   try {
-    return Response.json(await snapshot(await requireEmployee()), {
+    return Response.json(await withEmployee(snapshot), {
       headers: {
         'Cache-Control': 'no-store'
       }
